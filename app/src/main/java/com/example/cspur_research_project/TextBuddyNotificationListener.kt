@@ -48,16 +48,22 @@ class TextBuddyNotificationListener : NotificationListenerService(), TextToSpeec
             } else {
                 Log.d("TEXT_BUDDY_TTS", "Text-to-Speech Engine is fully ready!")
 
-                // CRUCIAL: Listen for when TTS finishes speaking so we can open the mic safely
+                // --- ENSURE THIS IS WRAPPED AND REGISTERED PLAINLY HERE ---
                 tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) {}
+                    override fun onStart(utteranceId: String?) {
+                        Log.d("TEXT_BUDDY_TTS", "TTS playback started: $utteranceId")
+                    }
+
                     override fun onDone(utteranceId: String?) {
+                        Log.d("TEXT_BUDDY_TTS", "TTS playback finished for ID: $utteranceId")
                         if (utteranceId == "TextBuddyTTSID") {
-                            Log.d("TEXT_BUDDY_TTS", "Speech finished. Activating Voice Recognition...")
                             listenForDriverChoice()
                         }
                     }
-                    override fun onError(utteranceId: String?) {}
+
+                    override fun onError(utteranceId: String?) {
+                        Log.e("TEXT_BUDDY_TTS", "TTS error occurred on ID: $utteranceId")
+                    }
                 })
             }
         } else {
@@ -120,7 +126,14 @@ class TextBuddyNotificationListener : NotificationListenerService(), TextToSpeec
 
     private fun speakOutLoud(textToSpeak: String) {
         Log.d("TEXT_BUDDY_TTS", "Speaking: $textToSpeak")
-        tts.speak(textToSpeak, TextToSpeech.QUEUE_FLUSH, null, "TextBuddyTTSID")
+
+        // Create an explicit bundle for parameters to guarantee the utterance ID is passed cleanly
+        val params = Bundle().apply {
+            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "TextBuddyTTSID")
+        }
+
+        // Use the explicit params bundle instead of passing null
+        tts.speak(textToSpeak, TextToSpeech.QUEUE_FLUSH, params, "TextBuddyTTSID")
     }
 
     // --- NEW: MICROPHONE INBOUND VOICE ENGINE ---
