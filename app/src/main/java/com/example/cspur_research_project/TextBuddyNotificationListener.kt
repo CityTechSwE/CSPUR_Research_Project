@@ -86,23 +86,13 @@ class TextBuddyNotificationListener : NotificationListenerService(), TextToSpeec
         val extras = notification.extras
         val packageName = sbn.packageName
 
-        // 1. App Filter
-        val isTargetApp = packageName.contains("messaging") ||
+        // 1. Expanded App Filter
+        val isTargetApp = packageName.contains("messaging") || // Covers Google & Samsung SMS
                 packageName.contains("whatsapp") ||
                 packageName.contains("facebook.orca") ||
-                packageName.contains("discord") ||
-                packageName.contains("samsung.android.messaging")
+                packageName.contains("discord")
 
         if (!isTargetApp) return
-
-        // 2. DM Category & Style Checks
-        val isMessageCategory = notification.category == Notification.CATEGORY_MESSAGE
-        val isMessagingStyle = extras.containsKey(Notification.EXTRA_MESSAGES) ||
-                extras.containsKey(Notification.EXTRA_CONVERSATION_TITLE) ||
-                extras.getString(Notification.EXTRA_TEMPLATE) == "android.app.Notification${'$'}MessagingStyle" ||
-                extras.getString(NotificationCompat.EXTRA_TEMPLATE) == "androidx.core.app.NotificationCompat${'$'}MessagingStyle"
-
-        if (!isMessageCategory && !isMessagingStyle) return
 
         val title = extras.getString(Notification.EXTRA_TITLE)
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
@@ -112,7 +102,7 @@ class TextBuddyNotificationListener : NotificationListenerService(), TextToSpeec
             // --- DUPLICATE PREVENTION GUARD ---
             val currentTime = System.currentTimeMillis()
             val isDuplicate = (text == lastProcessedText && title == lastProcessedSender) &&
-                    (currentTime - lastProcessedTime < 30000) // Within 30 seconds
+                    (currentTime - lastProcessedTime < 30000)
 
             if (isDuplicate) {
                 Log.d("TEXT_BUDDY_MONITOR", "Ignored duplicate notification update from $title.")
@@ -128,10 +118,11 @@ class TextBuddyNotificationListener : NotificationListenerService(), TextToSpeec
                 for (action in actions) {
                     val remoteInputs = action.remoteInputs ?: continue
                     for (remoteInput in remoteInputs) {
-                        if (remoteInput.allowFreeFormInput || remoteInput.resultKey != null) {
+                        // Messenger often uses 'remote_input' or 'reply_body' as resultKey
+                        if (remoteInput.resultKey != null || remoteInput.allowFreeFormInput) {
                             pendingReplyIntent = action.actionIntent
                             replyRemoteInputKey = remoteInput.resultKey
-                            Log.d("TEXT_BUDDY_ACTION", "Successfully locked reply intent and key: ${remoteInput.resultKey}")
+                            Log.d("TEXT_BUDDY_ACTION", "Locked Messenger reply intent key: ${remoteInput.resultKey}")
                             break
                         }
                     }
@@ -139,10 +130,10 @@ class TextBuddyNotificationListener : NotificationListenerService(), TextToSpeec
                 }
             }
 
+            // If we locked a reply intent, IT IS A VALID MESSAGE (no matter what category tag the OS gave it!)
             if (pendingReplyIntent != null && replyRemoteInputKey != null) {
-                Log.d("TEXT_BUDDY_MONITOR", "Valid Direct Message with Reply Action from $title! Processing...")
+                Log.d("TEXT_BUDDY_MONITOR", "Valid Direct Message caught from $packageName ($title)! Processing...")
 
-                // Update our duplicate tracker so re-posts of this exact message are ignored
                 lastProcessedText = text
                 lastProcessedSender = title
                 lastProcessedTime = currentTime
@@ -154,7 +145,7 @@ class TextBuddyNotificationListener : NotificationListenerService(), TextToSpeec
                     getSmartReplies(title, text)
                 }
             } else {
-                Log.e("TEXT_BUDDY_ACTION", "Caught message from $packageName but no direct reply RemoteInput was provided by the app.")
+                Log.d("TEXT_BUDDY_ACTION", "Ignored non-message/broadcast from $packageName (No direct reply field).")
             }
         }
     }
